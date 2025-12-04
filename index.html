@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lorenzo | Terminal</title>
+    <style>
+        :root {
+            --bg-color: #0d0d0d;
+            --term-color: #33ff00; /* Verde Fosforo */
+            --term-glow: #33ff00aa;
+            --font-size: 1.1rem;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--term-color);
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 20px;
+            overflow: hidden; /* Nasconde scrollbar nativa */
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Effetto CRT (Scanlines) */
+        body::before {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 2;
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+        }
+
+        /* Contenitore principale */
+        #terminal {
+            width: 100%;
+            max-width: 900px;
+            margin: 0 auto;
+            height: 100%;
+            overflow-y: auto;
+            padding-bottom: 50px;
+            text-shadow: 0 0 5px var(--term-glow); /* Bagliore */
+        }
+
+        /* Link stile terminale */
+        a { color: var(--term-color); text-decoration: underline; }
+        a:hover { background-color: var(--term-color); color: #000; }
+
+        /* Input Area */
+        .input-line { display: flex; align-items: center; margin-top: 10px; }
+        .prompt { margin-right: 10px; font-weight: bold; }
+        
+        /* Input invisibile per gestire la tastiera (anche mobile) */
+        #cmd-input {
+            background: transparent;
+            border: none;
+            color: transparent;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            position: absolute;
+        }
+        
+        /* Cursore lampeggiante */
+        .cursor {
+            display: inline-block;
+            width: 10px;
+            height: 1.2em;
+            background-color: var(--term-color);
+            animation: blink 1s step-end infinite;
+            vertical-align: middle;
+        }
+
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+        /* Utility classes */
+        .output { white-space: pre-wrap; margin-bottom: 10px; line-height: 1.4; }
+        .command-highlight { color: #fff; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div id="terminal">
+        <pre id="header">
+====================================
+Account terminal v.1.0.2
+====================================
+Welcome. Type 'help' or press 'tab' to see available commands.
+        </pre>
+
+        <div id="history"></div>
+
+        <div class="input-line">
+            <span class="prompt">guest@lorenzo:~$</span>
+            <span id="typed-text"></span><span class="cursor"></span>
+        </div>
+    </div>
+
+    <input type="text" id="cmd-input" autocomplete="on" autofocus>
+
+    <script>
+        const inputField = document.getElementById('cmd-input');
+        const typedText = document.getElementById('typed-text');
+        const historyDiv = document.getElementById('history');
+        const terminalDiv = document.getElementById('terminal');
+
+        // --- I TUOI DATI E COMANDI ---
+        // Modifica qui per cambiare i testi!
+        const commands = {
+            'help': "Available commands:\n- [about]    : Who am I?\n- [projects] : Hardware & LLM experiments\n- [awards]   : Honors & Competitions\n- [social]   : Github & LinkedIn\n- [languages]    : Programming Languages that I'm used to\n- [clear]    : Clear terminal",
+            
+            'about': "LORENZO GRILLO\n-------\nPhD Candidate in AI & Cybersecurity. Currently working for Sebyone.\n\nEducation:\n- Double MSc: Unical & FH Upper Austria\n- BSc: Unical\n- High School: ITIS Vibo Valentia\n- Exchange student in: Dublin, Hagenberg",
+            
+            'projects': "PROJECTS REPO\n-------------\n1. LLMASP: Enhancing LLM reaasoning using ASP language.\n2. ARM to MIPS compiler (Used to write a jit compiler).\n3. DaaS - Research and development of an overlay mesh network. More details on sebyone.it.\n4. GreenBot: Autonomous bee bot for monitoring and impollination (with AI features).\n5. Emotion recognition bot using computer vision and ML techniques for helping autistic children.",
+            
+            'awards': "ACHIEVEMENTS\n------------\n> Alfiere della Repubblica: Awarded by President Mattarella.\n> Winner: National Robotic Competition 2020 (Team Aria).\n> Speaker: IEEE 2025 (DaaS - ATS).",
+            
+            'languages': "LANGUAGES\n---------\n[LOW LEVEL & EMBEDDED]\n- C, C++\n- Assembly (MIPS, ARM, x86)\n\n[HIGH LEVEL & SCRIPTING]\n- Python, Java, C#, Perl\n- Pascal, Basic, VBA\n\n[WEB & DB]\n- JavaScript, HTML/CSS, PHP\n- SQL, ASP",
+            
+            'social': "CONNECT\n-------\nGithub: github.com/Xiro28",
+            
+            'sudo': "Permission denied: You are not root.",
+        };
+
+        // Focus sempre sull'input
+        document.addEventListener('click', () => inputField.focus());
+
+        // Gestione digitazione
+        inputField.addEventListener('input', () => {
+            typedText.innerText = inputField.value;
+        });
+
+        inputField.addEventListener('keydown', (e) => {
+            if (e.key === 'Tab') {
+                e.preventDefault(); // Blocca il cambio focus del browser
+
+                const currentInput = inputField.value.trim().toLowerCase();
+                if (!currentInput) {
+                    const response = document.createElement('div');
+                    response.className = 'output';
+                    response.innerText = commands['help'];
+                    historyDiv.appendChild(response);
+                    return;
+                }
+
+                // Cerca comandi che iniziano con quello che hai scritto
+                const availableCmds = Object.keys(commands);
+                const matches = availableCmds.filter(cmd => cmd.startsWith(currentInput));
+
+                if (matches.length === 1) {
+                    // Se c'è un solo match, completa la parola
+                    const completedCmd = matches[0];
+                    inputField.value = completedCmd;
+                    typedText.innerText = completedCmd; // Aggiorna il testo a video
+                }
+            }
+        });
+
+        // Gestione tasto Invio
+        inputField.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const cmd = inputField.value.trim().toLowerCase();
+                processCommand(cmd);
+                inputField.value = '';
+                typedText.innerText = '';
+            }
+        });
+
+        function processCommand(cmd) {
+            if (!cmd) return;
+
+            // 1. Crea la riga di ciò che l'utente ha scritto
+            const cmdLine = document.createElement('div');
+            cmdLine.className = 'output';
+            cmdLine.innerHTML = `<span class="prompt">guest@lorenzo:~$</span> ${cmd}`;
+            historyDiv.appendChild(cmdLine);
+
+            // 2. Elabora la risposta
+            if (cmd === 'clear') {
+                historyDiv.innerHTML = '';
+            } else if (commands[cmd]) {
+                const response = document.createElement('div');
+                response.className = 'output';
+                response.innerText = commands[cmd];
+                historyDiv.appendChild(response);
+            } else {
+                const error = document.createElement('div');
+                error.className = 'output';
+                error.innerText = `Command not found: ${cmd}. Type 'help' for options.`;
+                historyDiv.appendChild(error);
+            }
+
+            // 3. Scroll automatico in basso
+            terminalDiv.scrollTop = terminalDiv.scrollHeight;
+        }
+    </script>
+</body>
+</html>
